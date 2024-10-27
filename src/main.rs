@@ -66,16 +66,14 @@ fn decode_list(encoded_value: &str) -> (DecodedType, usize) {
                 }
             }
             val if val == 'l' => {
-                // iter.next();
                 let (nested_result, end_idx) = decode_list(&encoded_value[iter_idx..]);
                 result.push(nested_result);
-                for _ in 0..=end_idx {
+                for _ in 0..end_idx {
                     iter.next();
                     iter_idx += 1;
                 }
             }
             val if val == 'e' => {
-                // iter.next();
                 iter_idx += 1;
                 break;
             }
