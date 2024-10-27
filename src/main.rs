@@ -7,11 +7,7 @@ use std::env;
 enum DecodedType {
     String(String),
     Number(i64),
-}
-
-enum DecodedResult {
-    Single(DecodedType),
-    Multiple(Vec<DecodedType>),
+    List(Vec<DecodedType>),
 }
 
 fn get_colon_idx_and_num(encoded_value: &str) -> (usize, usize) {
@@ -35,12 +31,12 @@ fn decode_int(encoded_value: &str) -> DecodedType {
     DecodedType::Number(str.parse().unwrap())
 }
 
-fn decode_list(encoded_value: &str) -> Vec<DecodedType> {
+fn decode_list(encoded_value: &str) -> (DecodedType, usize) {
     // Remove first(l) and last(e) char
-    let encoded_value = &encoded_value[1..encoded_value.len() - 1];
-
     let mut iter = encoded_value.chars().peekable();
-    let mut iter_idx: usize = 0;
+    iter.next(); // move iterator to skip 'l'
+
+    let mut iter_idx: usize = 1;
     let mut result: Vec<DecodedType> = Vec::new();
 
     while let Some(&value) = iter.peek() {
@@ -63,51 +59,64 @@ fn decode_list(encoded_value: &str) -> Vec<DecodedType> {
                 let str_chunk = &encoded_value[iter_idx..];
                 result.push(decode_int(str_chunk));
                 let end_idx = str_chunk.find('e').unwrap();
-                
+
                 for _ in 0..=end_idx {
                     iter.next();
                     iter_idx += 1;
                 }
             }
+            val if val == 'l' => {
+                // iter.next();
+                let (nested_result, end_idx) = decode_list(&encoded_value[iter_idx..]);
+                result.push(nested_result);
+                for _ in 0..=end_idx {
+                    iter.next();
+                    iter_idx += 1;
+                }
+            }
+            val if val == 'e' => {
+                // iter.next();
+                iter_idx += 1;
+                break;
+            }
             _ => {
-                println!("What is failed value: {} and encoded: {}", value, encoded_value);
+                println!(
+                    "What is failed value: {} and encoded: {}",
+                    value, encoded_value
+                );
                 panic!("Unhandled encoded value inside list: {}", value);
             }
         }
     }
 
-    result
+    (DecodedType::List(result), iter_idx)
 }
 
 fn decode_type_to_serde_json(decoded_type: &DecodedType) -> serde_json::Value {
     match decoded_type {
         DecodedType::String(val) => serde_json::Value::String(val.to_string()),
         DecodedType::Number(val) => (*val).into(),
+        DecodedType::List(list) => {
+            let vec: Vec<serde_json::Value> = list
+                .iter()
+                .map(|decoded_type| decode_type_to_serde_json(decoded_type))
+                .collect();
+            vec.into()
+        },
     }
 }
 
 #[allow(dead_code)]
 fn decode_bencoded_value(encoded_value: &str) -> serde_json::Value {
     // If encoded_value starts with a digit, it's a number
-    let decoded_result: DecodedResult = match encoded_value.chars().next().unwrap() {
-        val if val.is_digit(10) => DecodedResult::Single(decode_string(encoded_value)),
-        val if val == 'i' => DecodedResult::Single(decode_int(encoded_value)),
-        val if val == 'l' => DecodedResult::Multiple(decode_list(encoded_value)),
+    let decoded_type = match encoded_value.chars().next().unwrap() {
+        val if val.is_digit(10) => decode_string(encoded_value),
+        val if val == 'i' => decode_int(encoded_value),
+        val if val == 'l' => decode_list(encoded_value).0,
         _ => panic!("Unhandled encoded value: {}", encoded_value),
     };
 
-    let decoded: serde_json::Value = match decoded_result {
-        DecodedResult::Single(decoded_type) => decode_type_to_serde_json(&decoded_type),
-        DecodedResult::Multiple(vec) => {
-            let vec: Vec<serde_json::Value> = vec
-                .iter()
-                .map(|decoded_type| decode_type_to_serde_json(decoded_type))
-                .collect();
-            vec.into()
-        }
-    };
-
-    decoded
+    decode_type_to_serde_json(&decoded_type)
 }
 
 // Usage: your_bittorrent.sh decode "<encoded_value>"
