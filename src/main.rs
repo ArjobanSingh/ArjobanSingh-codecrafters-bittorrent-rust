@@ -69,7 +69,10 @@ fn decode_list(encoded_value: &str) -> Vec<DecodedType> {
                     iter_idx += 1;
                 }
             }
-            _ => panic!("Unhandled encoded value inside list: {}", value),
+            _ => {
+                println!("What is failed value: {} and encoded: {}", value, encoded_value);
+                panic!("Unhandled encoded value inside list: {}", value);
+            }
         }
     }
 
